@@ -782,34 +782,40 @@ ${repeatedWorksText}`);
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             
             {/* 타이틀 및 장치 선택 시 바로 옆에 나타나는 개소 선택 메뉴 */}
-            <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-              <h2 className="text-base md:text-lg font-bold flex items-center space-x-2 text-slate-100">
+            <div className="flex items-center space-x-3 flex-wrap gap-2">
+              <h2 className="text-base md:text-lg font-extrabold flex items-center space-x-2 text-white">
                 <Database className="w-5 h-5 text-blue-400" />
                 <span>분석 데이터 내용 확인 ({filteredTableData.length}행)</span>
               </h2>
 
               {/* [UI/UX 개선] 장치 선택 시 타이틀 바로 옆에 나란히 나타나는 해당 장치 전용 개소 선택 드롭다운 */}
-              {selectedDevice !== "전체" && locationList.length > 0 && (
-                <div className="flex items-center space-x-1.5 bg-blue-950/80 border-2 border-blue-500/80 px-3 py-1 rounded-xl shadow-md animate-in fade-in zoom-in-95 duration-200">
-                  <MapPin className="w-4 h-4 text-cyan-300 animate-pulse" />
-                  <span className="text-xs text-blue-200 font-bold whitespace-nowrap">
-                    [{selectedDevice}] 개소 선택:
-                  </span>
-                  <select 
-                    value={selectedLocation} 
-                    onChange={(e) => setSelectedLocation(e.target.value)}
-                    className="bg-slate-900 text-cyan-300 font-bold text-xs rounded-lg px-2.5 py-1 outline-none border border-blue-400 cursor-pointer shadow-inner hover:bg-slate-800 transition-colors"
-                  >
-                    <option value="전체">✨ 전체 개소 보기 ({locationList.length}개소)</option>
-                    {locationList.map(loc => (
-                      <option key={loc} value={loc}>{loc}</option>
-                    ))}
-                  </select>
-                </div>
+              {selectedDevice !== "전체" ? (
+                locationList.length > 0 && (
+                  <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-900/90 to-indigo-900/90 border-2 border-cyan-400/80 px-3.5 py-1.5 rounded-xl shadow-lg shadow-cyan-950/40 animate-in fade-in zoom-in-95 duration-200">
+                    <MapPin className="w-4 h-4 text-cyan-300 animate-bounce" />
+                    <span className="text-xs text-cyan-200 font-bold whitespace-nowrap">
+                      [{selectedDevice}] 개소 선택:
+                    </span>
+                    <select 
+                      value={selectedLocation} 
+                      onChange={(e) => setSelectedLocation(e.target.value)}
+                      className="bg-slate-900 text-cyan-200 font-black text-xs rounded-lg px-3 py-1 outline-none border border-cyan-400/60 cursor-pointer shadow-inner hover:border-cyan-300 transition-all"
+                    >
+                      <option value="전체">✨ 전체 개소 보기 ({locationList.length}개소)</option>
+                      {locationList.map(loc => (
+                        <option key={loc} value={loc}>{loc}</option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              ) : (
+                <span className="text-xs text-slate-400 bg-slate-900/60 border border-slate-700/60 px-2.5 py-1 rounded-lg">
+                  💡 상단에서 <b>장치를 선택</b>하면 해당 장치의 개소 선택 메뉴가 이곳에 나타납니다.
+                </span>
               )}
 
-              <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full flex items-center font-medium">
-                <Calendar className="w-3 h-3 mr-1" /> 발생일 오름차순(시간순) 정렬
+              <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-full flex items-center font-medium">
+                <Calendar className="w-3 h-3 mr-1" /> 발생일 오름차순 정렬
               </span>
             </div>
             
