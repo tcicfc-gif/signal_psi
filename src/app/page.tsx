@@ -289,12 +289,12 @@ export default function MaintenanceAnalysisDashboard() {
       result = result.filter(row => String(row[workContentKey] || '').toLowerCase().includes(keyword));
     }
 
-    // 발생일(날짜) 기준 오름차순(시간순) 자동 정렬
+    // 발생일(날짜) 기준 최신순(내림차순) 자동 정렬
     if (dateKey) {
       result.sort((a, b) => {
         const dateA = String(a[dateKey] || '');
         const dateB = String(b[dateKey] || '');
-        return dateA.localeCompare(dateB);
+        return dateB.localeCompare(dateA);
       });
     }
 
@@ -812,7 +812,7 @@ ${repeatedWorksText}`);
               </h2>
 
               <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-full flex items-center font-medium">
-                <Calendar className="w-3 h-3 mr-1" /> 발생일 오름차순 정렬
+                <Calendar className="w-3 h-3 mr-1" /> 발생일 최신순(내림차순) 정렬
               </span>
             </div>
             
