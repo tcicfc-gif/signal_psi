@@ -290,11 +290,31 @@ export default function MaintenanceAnalysisDashboard() {
     }
 
     // 발생일(날짜) 기준 최신순(내림차순) 자동 정렬
+    // 날짜 형식이 불일치(예: 26.5.24 vs 26.08.17)할 수 있으므로 숫자 파싱 비교
     if (dateKey) {
+      const parseDateValue = (raw: string): number => {
+        const s = String(raw || '').trim();
+        if (!s) return 0;
+        // 여러 날짜가 공백으로 나열된 경우 첫 번째 날짜 사용
+        const first = s.split(/\s+/)[0];
+        // 구분자(. - /)로 분리
+        const parts = first.split(/[.\-\/]/).map(p => parseInt(p, 10)).filter(n => !isNaN(n));
+        if (parts.length >= 3) {
+          let [y, m, d] = parts;
+          if (y < 100) y += 2000; // YY → YYYY
+          return y * 10000 + m * 100 + d;
+        }
+        if (parts.length === 2) {
+          let [y, m] = parts;
+          if (y < 100) y += 2000;
+          return y * 10000 + m * 100;
+        }
+        return 0;
+      };
       result.sort((a, b) => {
-        const dateA = String(a[dateKey] || '');
-        const dateB = String(b[dateKey] || '');
-        return dateB.localeCompare(dateA);
+        const dateA = parseDateValue(String(a[dateKey] || ''));
+        const dateB = parseDateValue(String(b[dateKey] || ''));
+        return dateB - dateA;
       });
     }
 
