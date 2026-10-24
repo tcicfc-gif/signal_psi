@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/lib/supabase';
 import { 
   Database, 
   FileText, 
@@ -17,7 +18,10 @@ import {
   Download, 
   CheckCircle2, 
   RefreshCw,
-  Printer 
+  Printer,
+  Cloud,
+  CloudOff,
+  Loader2
 } from 'lucide-react';
 
 // 초기 샘플 데이터 (파일 업로드 전 즉시 동작 및 시각화 확인용)
@@ -49,13 +53,144 @@ export default function MaintenanceAnalysisDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<string>("전체");
   const [searchText, setSearchText] = useState<string>("");
 
+  // Supabase 클라우드 연동 상태
+  const [cloudFiles, setCloudFiles] = useState<{ id: string; file_name: string; uploaded_at: string }[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState<string>("");
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isLoadingCloud, setIsLoadingCloud] = useState<boolean>(false);
+  const [cloudStatus, setCloudStatus] = useState<string>(""); // 상태 메시지
+
   // 장치 선택 처리 핸들러 (장치 변경 시 연관 개소 필터 즉시 "전체"로 초기화)
   const handleDeviceSelect = (device: string) => {
     setSelectedDevice(device);
     setSelectedLocation("전체");
   };
 
-  // 1. 파일 업로드 및 인코딩 방어 파싱 로직
+  // ─── Supabase 클라우드 연동 함수 ───
+
+  // 클라우드 파일 목록 로드
+  const loadCloudFiles = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('uploaded_files')
+        .select('id, file_name, uploaded_at')
+        .order('uploaded_at', { ascending: false });
+      if (error) throw error;
+      setCloudFiles(data || []);
+    } catch (err) {
+      console.warn('클라우드 파일 목록 로드 실패:', err);
+    }
+  }, []);
+
+  // 특정 파일의 레코드를 클라우드에서 로드
+  const loadRecordsFromCloud = useCallback(async (fileId: string, fName?: string) => {
+    setIsLoadingCloud(true);
+    setCloudStatus('☁️ 클라우드 데이터 불러오는 중...');
+    try {
+      const { data, error } = await supabase
+        .from('maintenance_records')
+        .select('*')
+        .eq('file_id', fileId);
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setCloudStatus('⚠️ 해당 파일에 저장된 레코드가 없습니다.');
+        setIsLoadingCloud(false);
+        return;
+      }
+      const formatted = data.map(r => ({
+        '장치명': r.device_name || '',
+        '개소': r.location || '',
+        '세부작업내용': r.work_content || '',
+        '발생일': r.occurrence_date || ''
+      }));
+      setTableData(formatted);
+      setColumns(['장치명', '개소', '세부작업내용', '발생일']);
+      setSelectedFileId(fileId);
+      if (fName) setFileName(fName);
+      setSelectedDevice('전체');
+      setSelectedLocation('전체');
+      setSearchText('');
+      setSummary('');
+      setShowSummary(false);
+      setCloudStatus(`✅ 클라우드에서 ${formatted.length}건 로드 완료`);
+      setTimeout(() => setCloudStatus(''), 3000);
+    } catch (err: any) {
+      console.error('클라우드 레코드 로드 실패:', err);
+      setCloudStatus('❌ 클라우드 로드 실패');
+    }
+    setIsLoadingCloud(false);
+  }, []);
+
+  // 파싱된 데이터를 클라우드에 저장
+  const saveToCloud = useCallback(async (fName: string, records: any[], dKey: string, lKey: string, wKey: string, dtKey: string) => {
+    setIsSaving(true);
+    setCloudStatus('☁️ 클라우드에 저장 중...');
+    try {
+      // 1) uploaded_files INSERT
+      const { data: fileData, error: fileErr } = await supabase
+        .from('uploaded_files')
+        .insert({ file_name: fName })
+        .select('id')
+        .single();
+      if (fileErr) throw fileErr;
+
+      const fileId = fileData.id;
+
+      // 2) maintenance_records 배치 INSERT (500건씩)
+      const rows = records.map(r => ({
+        file_id: fileId,
+        device_name: String(r[dKey] || '').trim(),
+        location: String(r[lKey] || '').trim(),
+        work_content: String(r[wKey] || '').trim(),
+        occurrence_date: String(r[dtKey] || '').trim()
+      }));
+
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500);
+        const { error: insertErr } = await supabase
+          .from('maintenance_records')
+          .insert(batch);
+        if (insertErr) throw insertErr;
+      }
+
+      setSelectedFileId(fileId);
+      setCloudStatus(`✅ ${records.length}건 클라우드 저장 완료`);
+      setTimeout(() => setCloudStatus(''), 3000);
+      
+      // 파일 목록 갱신
+      await loadCloudFiles();
+    } catch (err: any) {
+      console.error('클라우드 저장 실패:', err);
+      setCloudStatus('❌ 클라우드 저장 실패: ' + (err.message || ''));
+    }
+    setIsSaving(false);
+  }, [loadCloudFiles]);
+
+  // 클라우드 파일 삭제
+  const deleteCloudFile = useCallback(async (fileId: string) => {
+    if (!confirm('이 파일과 관련된 모든 레코드가 삭제됩니다. 계속하시겠습니까?')) return;
+    try {
+      const { error } = await supabase
+        .from('uploaded_files')
+        .delete()
+        .eq('id', fileId);
+      if (error) throw error;
+      setCloudStatus('🗑️ 클라우드 파일 삭제 완료');
+      setTimeout(() => setCloudStatus(''), 3000);
+      if (selectedFileId === fileId) {
+        setSelectedFileId('');
+      }
+      await loadCloudFiles();
+    } catch (err: any) {
+      console.error('클라우드 파일 삭제 실패:', err);
+      setCloudStatus('❌ 삭제 실패');
+    }
+  }, [selectedFileId, loadCloudFiles]);
+
+  // 앱 로드 시 클라우드 파일 목록 자동 로드
+  useEffect(() => {
+    loadCloudFiles();
+  }, [loadCloudFiles]);
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -184,6 +319,16 @@ export default function MaintenanceAnalysisDashboard() {
 
         setColumns(validCols.map(c => c.name));
         setTableData(formatted);
+
+        // Supabase 클라우드에 자동 저장 (비동기)
+        const colNames = validCols.map(c => c.name);
+        const dK = colNames.find(c => c.includes('장치명') || c.includes('장치') || c.includes('기기') || c.includes('설비')) || (colNames.length > 1 ? colNames[1] : colNames[0] || '');
+        const lK = colNames.find(c => c.includes('개소') || c.includes('지역') || c.includes('위치') || c.includes('역명')) || '';
+        const wK = colNames.find(c => c.includes('세부작업') || c.includes('작업내용') || c.includes('세부내용') || c.includes('내용') || c.includes('현상')) || '';
+        const dtK = colNames.find(c => c.includes('발생일') || c.includes('일자') || c.includes('날짜') || c.includes('등록일') || c.includes('일시')) || '';
+        if (formatted.length > 0) {
+          saveToCloud(file.name, formatted, dK, lK, wK, dtK);
+        }
       } catch (err: any) {
         console.error('File Parse Error:', err);
         alert(`파일을 분석하는 중 오류가 발생했습니다: ${err.message || '파일 형식을 확인해 주세요.'}`);
@@ -665,6 +810,66 @@ ${repeatedWorksText}`);
                 className="hidden"
               />
             </label>
+          </div>
+        </div>
+
+        {/* ─── Supabase 클라우드 데이터 패널 ─── */}
+        <div className="bg-slate-800/80 p-4 rounded-2xl shadow-lg border border-slate-700 space-y-3">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <Cloud className="w-5 h-5 text-sky-400" />
+              <span className="text-sm font-bold text-slate-100">☁️ 클라우드 데이터</span>
+              {cloudFiles.length > 0 && (
+                <span className="text-xs bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2 py-0.5 rounded-full">
+                  {cloudFiles.length}개 파일
+                </span>
+              )}
+              {cloudStatus && (
+                <span className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-lg animate-pulse">
+                  {cloudStatus}
+                </span>
+              )}
+              {(isSaving || isLoadingCloud) && (
+                <Loader2 className="w-4 h-4 text-sky-400 animate-spin" />
+              )}
+            </div>
+
+            <div className="flex items-center space-x-2 flex-wrap gap-2">
+              {cloudFiles.length > 0 ? (
+                <>
+                  <select
+                    value={selectedFileId}
+                    onChange={(e) => {
+                      const fId = e.target.value;
+                      if (fId) {
+                        const found = cloudFiles.find(f => f.id === fId);
+                        loadRecordsFromCloud(fId, found?.file_name);
+                      }
+                    }}
+                    className="bg-slate-900 text-sky-200 font-bold text-xs rounded-lg px-3 py-1.5 outline-none border border-slate-600 cursor-pointer max-w-[280px]"
+                  >
+                    <option value="">☁️ 클라우드 파일 선택...</option>
+                    {cloudFiles.map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.file_name} ({new Date(f.uploaded_at).toLocaleDateString('ko-KR')})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedFileId && (
+                    <button
+                      onClick={() => deleteCloudFile(selectedFileId)}
+                      className="text-xs bg-red-600/80 hover:bg-red-500 text-white px-2.5 py-1.5 rounded-lg font-semibold transition-colors"
+                    >
+                      🗑️ 삭제
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs text-slate-500 flex items-center gap-1">
+                  <CloudOff className="w-3.5 h-3.5" /> 저장된 클라우드 파일이 없습니다
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
